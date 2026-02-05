@@ -9,23 +9,27 @@ import shap
 import matplotlib.pyplot as plt
 import joblib
 import uuid
+import os
+from pathlib import Path  # This is the line that defines 'Path'
 
+# 1. This is the full path to the FILE: .../app/ui_code.py
+current_file = Path(__file__).resolve()
 
-# In[82]:
+# 2. This is the folder containing the file: .../app/
+# We MUST use .parent here to get the directory, not the filename
+app_folder = current_file.parent
 
+# 3. This is the project root: .../Modeling-the-Success...Capstone/
+PROJECT_ROOT = app_folder.parent
 
-# Load dataset and model
-df = pd.read_csv("ui_data.csv")  # this includes 'success' column if needed
-model = joblib.load("rf_shap_tuned.pkl")
+print(f"DEBUG: Project Root is {PROJECT_ROOT}")
+
+# 4. Now the path will be correct: .../Capstone/Data/ui_data.csv
+df = pd.read_csv(PROJECT_ROOT / "Data" / "ui_data.csv")
+model = joblib.load(PROJECT_ROOT / "models" / "rf_shap_tuned.pkl")
+shap_values = joblib.load(PROJECT_ROOT / "models" / "shap_values_class1.pkl")
+
 X = df.drop(columns=["success", "year"])
-
-
-# In[83]:
-
-
-# Load SHAP values (optional, only if precomputed)
-shap_values = joblib.load("shap_values_class1.pkl")
-
 
 # In[84]:
 
@@ -55,7 +59,19 @@ def shap_dependence_plot(main_feature, interaction_feature, shap_values, X):
             show=False
         )
 
-        fig_path = f"shap_plot_{uuid.uuid4().hex}.png"
+        # FIX: Handle the case where __file__ is missing
+        try:
+            current_dir = Path(__file__).resolve().parent
+        except NameError:
+            # Fallback to current working directory if __file__ is not defined
+            current_dir = Path(os.getcwd())
+            # If R is running from the root, we might need to go into /app
+            if (current_dir / "app").exists():
+                current_dir = current_dir / "app"
+
+        fig_name = f"shap_plot_{uuid.uuid4().hex}.png"
+        fig_path = str(current_dir / fig_name)
+
         plt.tight_layout()
         plt.savefig(fig_path)
         plt.close()

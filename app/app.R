@@ -7,6 +7,17 @@ library(shinyjs)
 library(rsconnect)
 library(reticulate)
 
+# --- SETUP ---
+# Detect if we are running in RStudio or a terminal to set the directory
+if (interactive()) {
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+}
+
+# Now relative paths work perfectly
+source_python("ui_code.py") # Adjust to "src/ui_code.py" if needed
+campaign_buttons <- read.csv("Data/campaign_buttons_data.csv")
+
+
 # Used to deploy to Shinyapps.io
 
 # Only install if packages are not already available
@@ -110,7 +121,7 @@ named_features <- c(
 
 # UI buttons data 
 
-df_ui_buttons_filtered <- read.csv("campaign_buttons_data.csv")
+df_ui_buttons_filtered <- read.csv("Data/campaign_buttons_data.csv")
 
 #Sri Lanka
 row_sl <- df_ui_buttons_filtered[df_ui_buttons_filtered$id == 125, ]
@@ -475,72 +486,48 @@ server <- function(input, output, session) {
     ')
   }, ignoreNULL = TRUE, ignoreInit = TRUE)
   
-  # SHAP plot auto generate
-  observe({
-    output$shap_plot_output <- renderImage({
-      tryCatch({
-        message("Generating plot for: log_rel_part / div_class")
-        
-        
-        fig_path <- shap_dependence_plot(
-          main_feature = "log_rel_part",
-          interaction_feature = "div_class",
-          shap_values = shap_values,
-          X = X
+  # SHAP Plot Rendering
+  output$shap_plot_output <- renderImage({
+    
+    # Trigger on button click or initial load
+    input$shap_plot_btn 
+    
+    # Isolate inputs so changes only apply on button click
+    main_feat <- isolate(input$shap_feature)
+    inter_feat <- isolate(input$interaction_feature)
+    
+    # Defaults for first load
+    if (is.null(main_feat) || main_feat == "") main_feat <- "log_rel_part"
+    if (is.null(inter_feat) || inter_feat == "") inter_feat <- "div_class"
+    
+    tryCatch({
+      interaction_clean <- if (inter_feat == "None") NULL else inter_feat
+      
+      # Call Python function
+      fig_path <- shap_dependence_plot(
+        main_feature = main_feat,
+        interaction_feature = interaction_clean,
+        shap_values = shap_values,
+        X = X
+      )
+      
+      # Validate file exists before returning
+      if (!is.null(fig_path) && file.exists(as.character(fig_path))) {
+        list(
+          src = fig_path,
+          contentType = "image/png",
+          width = "100%",
+          alt = "SHAP Dependence Plot"
         )
-        
-        if (!is.null(fig_path) && file.exists(fig_path)) {
-          list(
-            src = fig_path,
-            contentType = "image/png",
-            alt = "SHAP Dependence Plot"
-          )
-        } else {
-          list(src = NULL, alt = "No plot returned.")
-        }
-      }, error = function(e) {
-        message("SHAP plot error:", e$message)
-        list(src = NULL, alt = "Error generating plot.")
-      })
-    }, deleteFile = TRUE)
-  })
-  
-  # SHAP Plot button
-  observeEvent(input$shap_plot_btn, {
-    output$shap_plot_output <- renderImage({
-      tryCatch({
-        message("Generating plot for: ", input$shap_feature, "/", input$interaction_feature)
-        
-        interaction_feature_clean <- if (input$interaction_feature == "None") {
-          NULL
-        } else {
-          input$interaction_feature
-        }
-        
-        
-        fig_path <- shap_dependence_plot(
-          main_feature = input$shap_feature,
-          interaction_feature = interaction_feature_clean,
-          shap_values = shap_values,
-          X = X
-        )
-        
-        if (!is.null(fig_path) && file.exists(fig_path)) {
-          list(
-            src = fig_path,
-            contentType = "image/png",
-            alt = "SHAP Dependence Plot"
-          )
-        } else {
-          list(src = NULL, alt = "No plot returned.")
-        }
-      }, error = function(e) {
-        message("SHAP plot error:", e$message)
-        list(src = NULL, alt = "Error generating plot.")
-      })
-    }, deleteFile = TRUE)
-  })
-  
+      } else {
+        list(src = "", alt = "Plot file not found")
+      }
+    }, error = function(e) {
+      message("SHAP plot error: ", e$message)
+      list(src = "", alt = "Error generating plot")
+    })
+  }, deleteFile = TRUE)
+
 }
 
 shinyApp(ui = ui, server = server)
